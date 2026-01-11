@@ -1,0 +1,234 @@
+--========================================================--
+-- 🔊 SONS + ESP + PC PROGRESS + GET UP (MASTER ON/OFF)
+--========================================================--
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+
+------------------------------------------------------------
+-- 🔘 ESTADO GERAL
+------------------------------------------------------------
+
+local SCRIPT_ON = false
+local ESP_ON = false
+local PC_ENABLED = false
+
+------------------------------------------------------------
+-- 🧠 GUI BASE
+------------------------------------------------------------
+
+local gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+gui.Name = "FTF_MASTER_GUI"
+gui.ResetOnSpawn = false
+
+local btn = Instance.new("TextButton", gui)
+btn.Size = UDim2.new(0,140,0,50)
+btn.Position = UDim2.new(0,10,0,10)
+btn.BackgroundColor3 = Color3.fromRGB(170,0,0)
+btn.TextColor3 = Color3.new(1,1,1)
+btn.Font = Enum.Font.GothamBold
+btn.TextScaled = true
+btn.Text = "OFF"
+btn.BorderSizePixel = 0
+
+------------------------------------------------------------
+-- 🔊 SONS
+------------------------------------------------------------
+
+local FOOTSTEP_ID = "rbxassetid://89746938623207"
+local JUMP_ID     = "rbxassetid://76693372307958"
+
+local function aplicarSons(char)
+	if not SCRIPT_ON then return end
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+
+	for _,s in ipairs(root:GetChildren()) do
+		if s:IsA("Sound") then
+			if s.Name == "Running" then
+				s.SoundId = FOOTSTEP_ID
+				s.Volume = 0.3
+			elseif s.Name == "Jumping" then
+				s.SoundId = JUMP_ID
+				s.Volume = 0.3
+			end
+		end
+	end
+end
+
+Workspace.ChildAdded:Connect(function(c)
+	if c:WaitForChild("HumanoidRootPart",3) then
+		aplicarSons(c)
+	end
+end)
+
+------------------------------------------------------------
+-- 🔥 ESP (JOGADORES + PORTAS)
+------------------------------------------------------------
+
+local espObjs = {}
+
+local function highlight(obj, color)
+	if not SCRIPT_ON or obj:FindFirstChild("ESP_HIGHLIGHT") then return end
+	local h = Instance.new("Highlight")
+	h.Name = "ESP_HIGHLIGHT"
+	h.FillColor = color
+	h.OutlineColor = color
+	h.FillTransparency = 0.6
+	h.OutlineTransparency = 0.1
+	h.Parent = obj
+	table.insert(espObjs, obj)
+end
+
+local function ativarESP()
+	if not SCRIPT_ON then return end
+	ESP_ON = true
+
+	for _,p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Character then
+			highlight(p.Character, Color3.fromRGB(255,0,0))
+		end
+	end
+
+	for _,m in ipairs(Workspace:GetDescendants()) do
+		if m:IsA("Model") then
+			local n = m.Name:lower()
+			if n:find("door") or n:find("exit") then
+				local aberta = false
+				if m:FindFirstChild("IsOpen") and m.IsOpen.Value then aberta = true end
+				if m:FindFirstChild("Open") and m.Open.Value then aberta = true end
+				if m:FindFirstChild("Opened") and m.Opened.Value then aberta = true end
+
+				local cor = aberta and Color3.fromRGB(50,255,50)
+					or Color3.fromRGB(255,220,0)
+
+				highlight(m, cor)
+			end
+		end
+	end
+end
+
+local function desligarESP()
+	ESP_ON = false
+	for _,o in ipairs(espObjs) do
+		if o and o:FindFirstChild("ESP_HIGHLIGHT") then
+			o.ESP_HIGHLIGHT:Destroy()
+		end
+	end
+	espObjs = {}
+end
+
+------------------------------------------------------------
+-- 🖥️ PC PROGRESS
+------------------------------------------------------------
+
+local function corGradiente(p)
+	if p >= 1 then return Color3.fromRGB(0,255,0) end
+	if p < 0.5 then
+		return Color3.fromRGB(255,255*p*2,255*p*2)
+	else
+		return Color3.fromRGB(255,255-((p-0.5)*2*255),0)
+	end
+end
+
+local function setupPC(pc)
+	if pc:FindFirstChild("ProgressBar") then return end
+
+	local guiB = Instance.new("BillboardGui", pc)
+	guiB.Name = "ProgressBar"
+	guiB.Size = UDim2.new(0,160,0,16)
+	guiB.StudsOffset = Vector3.new(0,2.6,0)
+	guiB.AlwaysOnTop = true
+	guiB.Enabled = PC_ENABLED
+
+	local bg = Instance.new("Frame", guiB)
+	bg.Size = UDim2.new(1,0,1,0)
+	bg.BackgroundColor3 = Color3.fromRGB(0,0,0)
+
+	local bar = Instance.new("Frame", bg)
+	bar.Size = UDim2.new(0,0,1,0)
+
+	local txt = Instance.new("TextLabel", bg)
+	txt.Size = UDim2.new(1,0,1,0)
+	txt.BackgroundTransparency = 1
+	txt.TextScaled = true
+	txt.Font = Enum.Font.SciFi
+	txt.TextColor3 = Color3.new(1,1,1)
+
+	RunService.Heartbeat:Connect(function()
+		if not SCRIPT_ON or not PC_ENABLED then return end
+		local save = 0
+		for _,p in ipairs(pc:GetChildren()) do
+			if p:IsA("BasePart") and p.Name:match("ComputerTrigger") then
+				for _,t in ipairs(p:GetTouchingParts()) do
+					local pl = Players:GetPlayerFromCharacter(t.Parent)
+					if pl then
+						local m = pl:FindFirstChild("TempPlayerStatsModule")
+						if m and not m.Ragdoll.Value then
+							save = math.max(save, m.ActionProgress.Value)
+						end
+					end
+				end
+			end
+		end
+
+		bar.Size = UDim2.new(save,0,1,0)
+		bar.BackgroundColor3 = corGradiente(save)
+		txt.Text = save >= 1 and "COMPLETED" or math.floor(save*100).."%"
+	end)
+end
+
+task.spawn(function()
+	while true do
+		if SCRIPT_ON then
+			local map = Workspace:FindFirstChild(tostring(ReplicatedStorage.CurrentMap.Value))
+			if map then
+				for _,o in ipairs(map:GetChildren()) do
+					if o.Name == "ComputerTable" then
+						setupPC(o)
+					end
+				end
+			end
+		end
+		task.wait(1)
+	end
+end)
+
+------------------------------------------------------------
+-- 🔁 GET UP
+------------------------------------------------------------
+
+local getupGui = Instance.new("ScreenGui", gui)
+getupGui.Enabled = false
+getupGui.ResetOnSpawn = false
+
+local function criarGetUp(plr)
+	if not SCRIPT_ON then return end
+	print("GET UP:", plr.Name)
+end
+
+------------------------------------------------------------
+-- 🔘 BOTÃO ON / OFF
+------------------------------------------------------------
+
+btn.MouseButton1Click:Connect(function()
+	SCRIPT_ON = not SCRIPT_ON
+
+	if SCRIPT_ON then
+		btn.Text = "ON"
+		btn.BackgroundColor3 = Color3.fromRGB(0,170,0)
+		PC_ENABLED = true
+		ativarESP()
+	else
+		btn.Text = "OFF"
+		btn.BackgroundColor3 = Color3.fromRGB(170,0,0)
+		PC_ENABLED = false
+		desligarESP()
+	end
+end)
+
+print("✅ SCRIPT COMPLETO ATIVO COM BOTÃO VISÍVEL ON/OFF")
